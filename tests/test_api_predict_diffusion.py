@@ -2,6 +2,7 @@ import asyncio
 import pytest
 import sys
 import os
+import base64
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
@@ -104,5 +105,49 @@ def test_predict_endpoint_sync_success(dataroot, api):
     for output in ["cond", "generated", "orig", "y_t"]:
         img_out = os.path.join(dir_out, f"%s_0_%s.png" % (predict_name, output))
         assert os.path.exists(img_out)
+        if os.path.exists(img_out):
+            os.remove(img_out)
+
+
+def test_predict_endpoint_sync_base64(dataroot, api):
+
+    model_in_file = os.path.abspath(os.path.join(dataroot, "latest_net_G_A.pth"))
+    dir_out = os.path.join(dataroot, "../")
+
+    payload = {
+        "predict_options": {
+            "model_in_file": model_in_file,
+            "img_in": os.path.join(
+                dataroot, "../horse2zebra/trainA/n02381460_1001.jpg"
+            ),
+            "dir_out": dir_out,
+        },
+        "server": {"sync": True, "base64": True},
+    }
+
+    response = api.post("/predict", json=payload)
+    assert response.status_code == 200
+
+    json_response = response.json()
+    predict_name = json_response["name"]
+
+    assert "message" in json_response
+    assert "status" in json_response
+    assert "name" in json_response
+    assert json_response["message"] == "ok"
+    assert json_response["status"] == "stopped"
+    assert json_response["name"].startswith("predict_")
+    assert len(json_response["name"]) > 0
+
+    assert len(json_response["base64"]) == 4
+    for index, output in enumerate(["cond", "generated", "orig", "y_t"]):
+
+        img_out = os.path.join(dir_out, f"%s_0_%s.png" % (predict_name, output))
+        assert os.path.exists(img_out)
+
+        with open(img_out, "rb") as f:
+            base64_out = base64.b64encode(f.read()).decode("utf-8")
+            assert base64_out == json_response["base64"][index]
+
         if os.path.exists(img_out):
             os.remove(img_out)
